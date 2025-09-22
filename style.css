@@ -43,6 +43,16 @@ canvas.overlay {
   pointer-events: none;
 }
 
+/* Feedback wizualny po skanie */
+.flash-ok {
+  animation: flash 250ms ease-out;
+}
+
+@keyframes flash {
+  from { box-shadow: 0 0 0 0 rgba(34,197,94,0.9); }
+  to { box-shadow: 0 0 0 14px rgba(34,197,94,0); }
+}
+
 .scanner-line {
   position: absolute;
   left: 0;
@@ -80,6 +90,7 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .result-section { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 8px 12px; margin-top: 8px; }
 .result-box { display: grid; }
 .result-box .code { font-size: 24px; font-weight: 700; letter-spacing: 1px; padding: 10px; background: #0f172a; border-radius: 8px; text-align: center; }
+.result-box .code-type { margin-top: 6px; font-size: 14px; color: #94a3b8; text-align: center; }
 
 /* usunięto sekcję ręcznego wpisu */
 
@@ -93,7 +104,7 @@ button:disabled { opacity: .6; cursor: not-allowed; }
   left: 0;
   right: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 12px;
   padding-top: 8px;

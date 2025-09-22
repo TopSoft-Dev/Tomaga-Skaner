@@ -2,10 +2,10 @@
   const videoElement = document.getElementById('preview');
   const overlayCanvas = document.getElementById('overlay');
   const cameraToggleBtn = document.getElementById('cameraToggleBtn');
-  const startStopBtn = document.getElementById('startStopBtn');
   const torchBtn = document.getElementById('torchBtn');
   const hint = document.getElementById('hint');
   const codeBox = document.getElementById('code');
+  const codeTypeEl = document.getElementById('codeType');
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -21,20 +21,20 @@
   let cameraDevices = [];
   let currentCameraIdx = 0;
   let isScanning = false;
+  let isCooldown = false;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
   const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 
   function setButtonsScanningState(scanning) {
     isScanning = scanning;
-    startStopBtn.textContent = scanning ? 'Stop' : 'Start';
-    startStopBtn.setAttribute('aria-label', scanning ? 'Stop skanowania' : 'Start skanowania');
     torchBtn.disabled = !scanning;
   }
 
   function setResult(resultText) {
     lastResult = resultText;
     codeBox.textContent = resultText || '—';
+    if (!resultText && codeTypeEl) codeTypeEl.textContent = '\u00A0';
   }
 
   function updateCameraToggleLabel() {
@@ -49,7 +49,17 @@
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       cameraDevices = devices.filter(d => d.kind === 'videoinput');
-      if (currentCameraIdx >= cameraDevices.length) currentCameraIdx = 0;
+      // Preferuj kamerę tylną (back/rear/environment) jako domyślną
+      const lowerLabels = cameraDevices.map(d => (d.label || '').toLowerCase());
+      const backIdx = lowerLabels.findIndex(l => /back|rear|environment|tyl|main|wide/.test(l));
+      if (backIdx >= 0) {
+        currentCameraIdx = backIdx;
+      } else if (cameraDevices.length > 1) {
+        // często ostatnia to tylna na mobile
+        currentCameraIdx = cameraDevices.length - 1;
+      } else if (currentCameraIdx >= cameraDevices.length) {
+        currentCameraIdx = 0;
+      }
       updateCameraToggleLabel();
     } catch (err) {
       console.error(err);
@@ -160,15 +170,19 @@
         if (nativeDetector) {
           const results = await nativeDetector.detect(videoElement);
           if (results && results.length > 0) {
-            const value = results[0].rawValue;
-            if (value && value !== lastResult) {
-              onDetected(value);
+            const first = results[0];
+            const value = first.rawValue;
+            const fmt = first.format || first.type;
+            if (value) {
+              onDetected(value, fmt);
             }
           }
         } else if (zxingReader) {
           const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
-          if (result && result.text && result.text !== lastResult) {
-            onDetected(result.text);
+          if (result && result.text) {
+            // ZXing format może być w result.barcodeFormat lub result.format
+            const fmt = result.barcodeFormat || result.format;
+            onDetected(result.text, fmt);
           }
         }
       } catch (err) {
@@ -213,22 +227,40 @@
     } catch (_) {}
   }
 
-  function onDetected(value) {
+  function inferTypeFromDigits(digits) {
+    if (digits.length === 13) return 'EAN-13';
+    if (digits.length === 8) return 'EAN-8';
+    if (digits.length === 12) return 'UPC-A';
+    if (digits.length === 6) return 'UPC-E';
+    return 'Kod kreskowy';
+  }
+
+  function onDetected(value, rawType) {
+    if (isCooldown) return;
     // filtruj do cyfr i typowych długości EAN
     const onlyDigits = String(value).replace(/\D/g, '');
     if (onlyDigits.length < 8 || onlyDigits.length > 18) return;
     setResult(onlyDigits);
+    // typ kodu
+    const mappedType = (rawType || '').toString().toUpperCase().replace('_', '-');
+    const friendly = mappedType.startsWith('EAN') || mappedType.startsWith('UPC') ? mappedType : inferTypeFromDigits(onlyDigits);
+    if (codeTypeEl) codeTypeEl.textContent = friendly;
     playBeep();
+    if (navigator.vibrate) { try { navigator.vibrate(80); } catch(_) {} }
+    // flash wizualny
+    const wrapper = videoElement.parentElement;
+    if (wrapper) {
+      wrapper.classList.remove('flash-ok');
+      void wrapper.offsetWidth;
+      wrapper.classList.add('flash-ok');
+      setTimeout(() => wrapper.classList.remove('flash-ok'), 300);
+    }
+    // cooldown, aby uniknąć powtarzania
+    isCooldown = true;
+    setTimeout(() => { isCooldown = false; }, 1200);
     hint.textContent = 'Zeskanowano. Możesz skopiować lub udostępnić kod.';
   }
 
-  startStopBtn.addEventListener('click', async () => {
-    if (isScanning) {
-      await stopCamera();
-    } else {
-      await startCamera();
-    }
-  });
   torchBtn.addEventListener('click', () => toggleTorch());
   cameraToggleBtn.addEventListener('click', async () => {
     if (cameraDevices.length === 0) return;
@@ -243,12 +275,16 @@
   // usunięto przyciski kopiuj/udostępnij/wyczyść
   // brak ręcznego wpisu
 
-  window.addEventListener('pageshow', () => enumerateCameras());
-  // Wymuś enumerację po przyznaniu uprawnień
-  navigator.mediaDevices?.getUserMedia?.({ video: true, audio: false }).then(stream => {
-    stream.getTracks().forEach(t => t.stop());
-    enumerateCameras();
-  }).catch(() => enumerateCameras());
+  async function autoStart() {
+    await enumerateCameras();
+    try {
+      // próbujemy wystartować kamerę od razu (pozwolenie wywoła prompt)
+      await startCamera();
+    } catch (_) {
+      // brak uprawnień lub błąd – zostaw komunikat i pozwól użytkownikowi zmienić ustawienia
+    }
+  }
+  window.addEventListener('pageshow', () => autoStart());
 
   // Rejestracja Service Workera (PWA)
   if ('serviceWorker' in navigator) {
