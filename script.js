@@ -9,7 +9,6 @@
   const priceBtn = document.getElementById('priceBtn');
   const searchBtn = document.getElementById('searchBtn');
   const clearCodeBtn = document.getElementById('clearCodeBtn');
-  const sendBtn = document.getElementById('sendBtn');
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -44,6 +43,20 @@
     return 'Błąd kamery: Nieznany problem z dostępem do kamery';
   }
 
+  function getOrCreateUserId() {
+    try {
+      const KEY = 'tomaga_user_id';
+      let id = localStorage.getItem(KEY);
+      if (!id) {
+        id = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('user-' + Math.random().toString(36).slice(2));
+        localStorage.setItem(KEY, id);
+      }
+      return id;
+    } catch (_) {
+      return 'user-' + Math.random().toString(36).slice(2);
+    }
+  }
+
   function setButtonsScanningState(scanning) {
     isScanning = scanning;
     torchBtn.disabled = !scanning;
@@ -57,7 +70,7 @@
     if (priceBtn) priceBtn.disabled = !has;
     if (searchBtn) searchBtn.disabled = !has;
     if (clearCodeBtn) clearCodeBtn.disabled = !has;
-    if (sendBtn) sendBtn.disabled = !has;
+    
   }
 
   function updateCameraToggleLabel() {
@@ -419,9 +432,31 @@
     });
   }
   if (priceBtn) {
-    priceBtn.addEventListener('click', () => {
-      // Placeholder – w przyszłości zapytanie do serwera
-      hint.textContent = `Sprawdzanie ceny dla: ${lastResult} (placeholder)`;
+    priceBtn.addEventListener('click', async () => {
+      if (!lastResult) return;
+      try {
+        hint.classList.remove('hint-success');
+        hint.classList.remove('hint-warning');
+        hint.textContent = 'Wysyłanie zapytania o cenę…';
+        const userId = getOrCreateUserId();
+        const { db } = await import('./firebase-init.js');
+        const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
+        // dokument o ID = userId, żeby nadpisywać i mieć 1 aktywne żądanie na użytkownika
+        await setDoc(doc(db, 'requests', userId), {
+          userId,
+          ean: lastResult,
+          requestedAt: serverTimestamp(),
+          status: 'pending',
+          // TTL: klient ustawia czas wygaśnięcia (np. 30 min) – skonfiguruj TTL w Firestore na polu expiresAt
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+        });
+        hint.classList.add('hint-success');
+        hint.textContent = 'Zeskanowano kod pomyślnie • Zapytanie o cenę wysłane';
+      } catch (err) {
+        console.error(err);
+        hint.classList.add('hint-warning');
+        hint.textContent = 'Błąd wysyłania zapytania o cenę';
+      }
     });
   }
   if (searchBtn) {
@@ -431,28 +466,7 @@
       window.open(url, '_blank', 'noopener');
     });
   }
-  if (sendBtn) {
-    sendBtn.addEventListener('click', async () => {
-      try {
-        hint.classList.remove('hint-success');
-        hint.classList.remove('hint-warning');
-        hint.textContent = 'Wysyłanie do Firestore…';
-        const { db } = await import('./firebase-init.js');
-        const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
-        await addDoc(collection(db, 'scans'), {
-          ean: lastResult,
-          createdAt: serverTimestamp(),
-          ua: navigator.userAgent
-        });
-        hint.classList.add('hint-success');
-        hint.textContent = 'Zapisano w Firestore';
-      } catch (err) {
-        console.error(err);
-        hint.classList.add('hint-warning');
-        hint.textContent = 'Błąd zapisu do Firestore';
-      }
-    });
-  }
+  
   if (clearCodeBtn) {
     clearCodeBtn.addEventListener('click', async () => {
       setResult('');
@@ -474,5 +488,6 @@
     });
   }
 })();
+
 
 

@@ -95,7 +95,7 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .result-box .code { font-size: 24px; font-weight: 700; letter-spacing: 1px; padding: 10px; background: #0f172a; border-radius: 8px; text-align: center; }
 button.danger { border-color: #7f1d1d; background: #1f2937; color: #fca5a5; }
 button#clearCodeBtn { padding: 12px 14px; font-size: 18px; line-height: 1; }
-.result-box .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.result-box .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* usunięto sekcję ręcznego wpisu */
 
