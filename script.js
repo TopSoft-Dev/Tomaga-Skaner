@@ -121,6 +121,21 @@
     return { x, y, width: boxWidth, height: boxHeight, cx: x + boxWidth / 2, cy: y + boxHeight / 2 };
   }
 
+  function rectsIntersect(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+
+  function rectDistance2(a, b) {
+    // kwadrat dystansu między prostokątami (0 jeśli się przecinają)
+    const dx = Math.max(b.x - (a.x + a.width), 0, a.x - (b.x + b.width));
+    const dy = Math.max(b.y - (a.y + a.height), 0, a.y - (b.y + b.height));
+    return dx * dx + dy * dy;
+  }
+
+  function inflateRect(r, pad) {
+    return { x: r.x - pad, y: r.y - pad, width: r.width + 2 * pad, height: r.height + 2 * pad };
+  }
+
   async function startCamera() {
     try {
       setResult('');
@@ -210,6 +225,13 @@
         if (nativeDetector) {
           const results = await nativeDetector.detect(videoElement);
           if (results && results.length > 0) {
+            if (results.length > 1) {
+              hint.classList.add('hint-warning');
+              hint.textContent = 'Wykryto wiele kodów, wyceluj dokładnie w ten co Cię interesuje';
+            } else {
+              hint.classList.remove('hint-warning');
+              hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
+            }
             const target = getTargetRect();
             if (results.length === 1) {
               // jeden kod – akceptuj bez względu na pozycję
@@ -219,41 +241,41 @@
                 onDetected(only.rawValue, fmt);
               }
             } else {
-              // wiele kodów – bierz wyłącznie te, których środek jest w celowniku
-              const inside = results
+              // wiele kodów – wybierz ten, który przecina się z ramką lub jest do niej najbliżej
+              const ranked = results
                 .map(r => {
                   const bb = r.boundingBox;
-                  const cx = bb.x + bb.width / 2;
-                  const cy = bb.y + bb.height / 2;
-                  const isIn = cx >= target.x && cx <= target.x + target.width && cy >= target.y && cy <= target.y + target.height;
-                  const dx = cx - target.cx;
-                  const dy = cy - target.cy;
-                  const dist2 = dx * dx + dy * dy;
-                  return { r, isIn, dist2 };
+                  const dist2 = rectsIntersect(bb, target) ? 0 : rectDistance2(bb, target);
+                  return { r, dist2 };
                 })
-                .filter(x => x.isIn)
                 .sort((a, b) => a.dist2 - b.dist2);
-              if (inside.length > 0) {
-                const chosen = inside[0].r;
+              if (ranked.length > 0) {
+                if (results.length > 1) {
+                  hint.classList.add('hint-warning');
+                  hint.textContent = 'Wykryto wiele kodów, wyceluj dokładnie w ten co Cię interesuje';
+                } else {
+                  hint.classList.remove('hint-warning');
+                }
+                const chosen = ranked[0].r;
                 if (chosen.rawValue) {
                   const fmt = chosen.format || chosen.type;
                   onDetected(chosen.rawValue, fmt);
                 }
               }
-              // jeśli żaden w celowniku – ignoruj
             }
           }
         } else if (zxingReader) {
           const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
           if (result && result.text) {
-            // Spróbuj sprawdzić, czy punkty leżą w celu; jeśli brak punktów, akceptuj
+            // ZXing zwykle zwraca pojedynczy wynik; sprawdź, czy jest w pobliżu ramki (z marginesem)
             const pts = result.resultPoints || result.points || [];
-            let accept = true;
             const target = getTargetRect();
+            const padded = inflateRect(target, 20);
+            let accept = true;
             if (pts.length) {
               const avg = pts.reduce((a, p) => ({ x: a.x + (p.x || p.getX?.() || 0), y: a.y + (p.y || p.getY?.() || 0) }), { x: 0, y: 0 });
               avg.x /= pts.length; avg.y /= pts.length;
-              accept = avg.x >= target.x && avg.x <= target.x + target.width && avg.y >= target.y && avg.y <= target.y + target.height;
+              accept = avg.x >= padded.x && avg.x <= padded.x + padded.width && avg.y >= padded.y && avg.y <= padded.y + padded.height;
             }
             if (accept) {
               const fmt = result.barcodeFormat || result.format;

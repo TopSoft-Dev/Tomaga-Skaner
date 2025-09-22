@@ -86,12 +86,14 @@ button.secondary { background: #1f2937; color: #e5e7eb; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 
 .hint { margin: 8px 0 0; color: #94a3b8; font-size: 14px; }
+.hint.hint-warning { color: #fbbf24; }
 
 .result-section { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 8px 12px; margin-top: 8px; }
 .result-box { display: grid; gap: 8px; }
-.code-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.code-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-bottom: 12px; }
 .result-box .code { font-size: 24px; font-weight: 700; letter-spacing: 1px; padding: 10px; background: #0f172a; border-radius: 8px; text-align: center; }
 button.danger { border-color: #7f1d1d; background: #1f2937; color: #fca5a5; }
+button#clearCodeBtn { padding: 12px 14px; font-size: 18px; line-height: 1; }
 .result-box .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
 /* usunięto sekcję ręcznego wpisu */
