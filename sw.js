@@ -1,9 +1,11 @@
-const CACHE_NAME = 'tomaga-skaner-v2';
+const CACHE_NAME = 'tomaga-skaner-v4';
 const APP_SHELL = [
   'index.html',
   'style.css',
   'script.js',
-  'manifest.webmanifest'
+  'manifest.webmanifest',
+  'icon.jpg',
+  'icon.ico'
 ];
 
 self.addEventListener('install', event => {

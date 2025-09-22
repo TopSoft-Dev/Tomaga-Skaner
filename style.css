@@ -1,3 +1,4 @@
+:root { color-scheme: dark; }
 /* Reset i podstawy */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -63,14 +64,15 @@ select, button, input {
   font-size: 16px;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+  border: 1px solid #374151;
+  background: #111827;
+  color: #e5e7eb;
 }
 button {
   cursor: pointer;
 }
 button.primary { background: #2563eb; color: white; border-color: #1d4ed8; }
-button.secondary { background: #e2e8f0; }
+button.secondary { background: #1f2937; color: #e5e7eb; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 
 .hint { margin: 8px 0 0; color: #94a3b8; font-size: 14px; }
