@@ -105,6 +105,7 @@
   }
 
   function dimAim() {
+    overlayCanvas.style.visibility = 'visible';
     overlayCanvas.classList.remove('showing');
     overlayCanvas.classList.remove('hiding');
     overlayCanvas.classList.add('inactive');
@@ -210,22 +211,36 @@
           const results = await nativeDetector.detect(videoElement);
           if (results && results.length > 0) {
             const target = getTargetRect();
-            // wybierz kod, którego środek pudełka leży w celu, a jeśli żaden – najbliższy centrum celu
-            let best = null;
-            let bestDist = Infinity;
-            for (const r of results) {
-              const bb = r.boundingBox;
-              const cx = bb.x + bb.width / 2;
-              const cy = bb.y + bb.height / 2;
-              const inside = cx >= target.x && cx <= target.x + target.width && cy >= target.y && cy <= target.y + target.height;
-              const dx = cx - target.cx;
-              const dy = cy - target.cy;
-              const dist2 = dx * dx + dy * dy - (inside ? 1e6 : 0); // preferuj te w środku (mniejsza „efektywna” odległość)
-              if (dist2 < bestDist) { bestDist = dist2; best = r; }
-            }
-            if (best && best.rawValue) {
-              const fmt = best.format || best.type;
-              onDetected(best.rawValue, fmt);
+            if (results.length === 1) {
+              // jeden kod – akceptuj bez względu na pozycję
+              const only = results[0];
+              if (only.rawValue) {
+                const fmt = only.format || only.type;
+                onDetected(only.rawValue, fmt);
+              }
+            } else {
+              // wiele kodów – bierz wyłącznie te, których środek jest w celowniku
+              const inside = results
+                .map(r => {
+                  const bb = r.boundingBox;
+                  const cx = bb.x + bb.width / 2;
+                  const cy = bb.y + bb.height / 2;
+                  const isIn = cx >= target.x && cx <= target.x + target.width && cy >= target.y && cy <= target.y + target.height;
+                  const dx = cx - target.cx;
+                  const dy = cy - target.cy;
+                  const dist2 = dx * dx + dy * dy;
+                  return { r, isIn, dist2 };
+                })
+                .filter(x => x.isIn)
+                .sort((a, b) => a.dist2 - b.dist2);
+              if (inside.length > 0) {
+                const chosen = inside[0].r;
+                if (chosen.rawValue) {
+                  const fmt = chosen.format || chosen.type;
+                  onDetected(chosen.rawValue, fmt);
+                }
+              }
+              // jeśli żaden w celowniku – ignoruj
             }
           }
         } else if (zxingReader) {
