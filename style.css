@@ -49,6 +49,7 @@ canvas.overlay {
 /* Animacje pojawiania/chowania celownika */
 .overlay.showing { animation: overlayFadeIn 220ms ease-out forwards; }
 .overlay.hiding { animation: overlayFadeOut 220ms ease-in forwards; }
+.overlay.inactive { opacity: 0.25; }
 @keyframes overlayFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes overlayFadeOut { from { opacity: 1; } to { opacity: 0; } }
 

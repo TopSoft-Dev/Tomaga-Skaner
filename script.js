@@ -98,18 +98,16 @@
 
   function showAim() {
     overlayCanvas.style.visibility = 'visible';
+    overlayCanvas.classList.remove('inactive');
     overlayCanvas.classList.remove('hiding');
     overlayCanvas.classList.add('showing');
     setTimeout(() => overlayCanvas.classList.remove('showing'), 240);
   }
 
-  function hideAim() {
+  function dimAim() {
     overlayCanvas.classList.remove('showing');
-    overlayCanvas.classList.add('hiding');
-    setTimeout(() => {
-      overlayCanvas.style.visibility = 'hidden';
-      overlayCanvas.classList.remove('hiding');
-    }, 220);
+    overlayCanvas.classList.remove('hiding');
+    overlayCanvas.classList.add('inactive');
   }
 
   function getTargetRect() {
@@ -320,8 +318,8 @@
       }
     }
     hint.textContent = 'Zeskanowano. Możesz udostępnić, sprawdzić cenę lub wyszukać.';
-    // Po udanym skanie zatrzymaj dalsze skanowanie i schowaj celownik
-    hideAim();
+    // Po udanym skanie zatrzymaj dalsze skanowanie i przyciemnij celownik
+    dimAim();
     if (scanTickerId) { clearInterval(scanTickerId); scanTickerId = null; }
     if (scanIntervalId) { clearInterval(scanIntervalId); scanIntervalId = null; }
   }
