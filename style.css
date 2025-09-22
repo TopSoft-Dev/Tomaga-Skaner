@@ -85,7 +85,7 @@ button.primary { background: #2563eb; color: white; border-color: #1d4ed8; }
 button.secondary { background: #1f2937; color: #e5e7eb; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 
-.hint { margin: 8px 0 0; color: #94a3b8; font-size: 14px; }
+.hint { margin: 8px 0 0; color: #94a3b8; font-size: 14px; text-align: center; }
 .hint.hint-warning { color: #fbbf24; }
 .hint.hint-success { color: #22c55e; }
 
@@ -96,6 +96,14 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 button.danger { border-color: #7f1d1d; background: #1f2937; color: #fca5a5; }
 button#clearCodeBtn { padding: 12px 14px; font-size: 18px; line-height: 1; }
 .result-box .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.result-box .actions #searchBtn { grid-column: 1 / -1; width: 100%; }
+.result-box .actions #searchBtn {
+  background: #ff6a00; /* pomarańcz allegro */
+  color: #ffffff;
+  border-color: #e65d00;
+  font-weight: 700;
+  padding: 12px 14px;
+}
 
 /* usunięto sekcję ręcznego wpisu */
 
