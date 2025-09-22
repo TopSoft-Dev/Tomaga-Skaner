@@ -5,7 +5,10 @@
   const torchBtn = document.getElementById('torchBtn');
   const hint = document.getElementById('hint');
   const codeBox = document.getElementById('code');
-  const codeTypeEl = document.getElementById('codeType');
+  const shareBtn = document.getElementById('shareBtn');
+  const priceBtn = document.getElementById('priceBtn');
+  const searchBtn = document.getElementById('searchBtn');
+  const clearCodeBtn = document.getElementById('clearCodeBtn');
   const scannerLineEl = document.querySelector('.scanner-line');
   // usunięto ręczny wpis
 
@@ -22,7 +25,6 @@
   let cameraDevices = [];
   let currentCameraIdx = 0;
   let isScanning = false;
-  let isCooldown = false;
   let triedAutoStart = false;
   let scanTickerId = null;
 
@@ -37,7 +39,11 @@
   function setResult(resultText) {
     lastResult = resultText;
     codeBox.textContent = resultText || '—';
-    if (!resultText && codeTypeEl) codeTypeEl.textContent = '\u00A0';
+    const has = Boolean(resultText);
+    if (shareBtn) shareBtn.disabled = !has || !('share' in navigator);
+    if (priceBtn) priceBtn.disabled = !has;
+    if (searchBtn) searchBtn.disabled = !has;
+    if (clearCodeBtn) clearCodeBtn.disabled = !has;
   }
 
   function updateCameraToggleLabel() {
@@ -243,21 +249,30 @@
     const isSame = onlyDigits === lastResult;
     setResult(onlyDigits);
     // typ kodu
-    const mappedType = (rawType || '').toString().toUpperCase().replace('_', '-');
-    const friendly = mappedType.startsWith('EAN') || mappedType.startsWith('UPC') ? mappedType : inferTypeFromDigits(onlyDigits);
-    if (codeTypeEl) codeTypeEl.textContent = friendly;
+    // usunięto wyświetlanie typu – przyciski zamiast
     if (!isSame) {
-      playBeep();
-      if (navigator.vibrate) { try { navigator.vibrate(80); } catch(_) {} }
-      const wrapper = videoElement.parentElement;
-      if (wrapper) {
-        wrapper.classList.remove('flash-ok');
-        void wrapper.offsetWidth;
-        wrapper.classList.add('flash-ok');
-        setTimeout(() => wrapper.classList.remove('flash-ok'), 300);
+      const runFeedback = () => {
+        playBeep();
+        if (navigator.vibrate) { try { navigator.vibrate(80); } catch(_) {} }
+        const wrapper = videoElement.parentElement;
+        if (wrapper) {
+          wrapper.classList.remove('flash-ok');
+          void wrapper.offsetWidth;
+          wrapper.classList.add('flash-ok');
+          setTimeout(() => wrapper.classList.remove('flash-ok'), 300);
+        }
+      };
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => setTimeout(runFeedback, 60), { timeout: 150 });
+      } else {
+        setTimeout(runFeedback, 80);
       }
     }
-    hint.textContent = 'Zeskanowano. Możesz skopiować lub udostępnić kod.';
+    hint.textContent = 'Zeskanowano. Możesz udostępnić, sprawdzić cenę lub wyszukać.';
+    // Po udanym skanie zatrzymaj dalsze skanowanie i ukryj animację
+    if (scannerLineEl) scannerLineEl.style.visibility = 'hidden';
+    if (scanTickerId) { clearInterval(scanTickerId); scanTickerId = null; }
+    if (scanIntervalId) { clearInterval(scanIntervalId); scanIntervalId = null; }
   }
 
   torchBtn.addEventListener('click', () => toggleTorch());
@@ -287,6 +302,36 @@
   window.addEventListener('pageshow', autoStart);
   window.addEventListener('load', autoStart);
   document.addEventListener('DOMContentLoaded', autoStart);
+
+  // Akcje przycisków wyników
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      if (!lastResult || !navigator.share) return;
+      try { await navigator.share({ title: 'Kod EAN', text: lastResult }); } catch(_) {}
+    });
+  }
+  if (priceBtn) {
+    priceBtn.addEventListener('click', () => {
+      // Placeholder – w przyszłości zapytanie do serwera
+      hint.textContent = `Sprawdzanie ceny dla: ${lastResult} (placeholder)`;
+    });
+  }
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      if (!lastResult) return;
+      const url = `https://allegro.pl/listing?string=${encodeURIComponent(lastResult)}&order=qd`;
+      window.open(url, '_blank', 'noopener');
+    });
+  }
+  if (clearCodeBtn) {
+    clearCodeBtn.addEventListener('click', async () => {
+      setResult('');
+      hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
+      if (scannerLineEl) scannerLineEl.style.visibility = '';
+      // wznów skanowanie
+      await startScanningLoop();
+    });
+  }
 
   // Rejestracja Service Workera (PWA)
   if ('serviceWorker' in navigator) {
