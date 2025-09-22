@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <title>Tomaga Skaner EAN</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" href="style.css">
+    <meta name="description" content="Prototyp mobilnej aplikacji do skanowania kodów EAN (barcodów) w przeglądarce.">
+    <link rel="manifest" href="manifest.webmanifest">
+    <!-- Ikony PWA (zakomentowane do późniejszego dodania) -->
+    <!-- <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png"> -->
+    <!-- <link rel="apple-touch-icon" href="icons/icon-192.png"> -->
+    <!-- <link rel="icon" href="icons/icon-512.png" sizes="512x512" type="image/png"> -->
+</head>
+<body>
+    <header class="app-header">
+        <h1>Tomaga Skaner</h1>
+    </header>
+
+    <main class="app-main">
+        <section class="camera-section">
+            <div class="video-wrapper">
+                <video id="preview" autoplay muted playsinline></video>
+                <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
+                <div class="scanner-line" aria-hidden="true"></div>
+            </div>
+            <div class="controls">
+                <select id="cameraSelect" aria-label="Wybór kamery"></select>
+                <button id="startBtn" class="primary">Start</button>
+                <button id="stopBtn" class="secondary" disabled>Stop</button>
+                <button id="torchBtn" class="secondary" disabled>Latarka</button>
+            </div>
+            <p id="hint" class="hint">Udziel przeglądarce dostępu do kamery. Skieruj aparat na kod kreskowy (EAN-13).</p>
+        </section>
+
+        <section class="result-section">
+            <h2>Wynik</h2>
+            <div class="result-box">
+                <div class="code" id="code">—</div>
+                <div class="actions">
+                    <button id="copyBtn" class="secondary" disabled>Kopiuj</button>
+                    <button id="shareBtn" class="secondary" disabled>Udostępnij</button>
+                    <button id="clearBtn" class="secondary" disabled>Wyczyść</button>
+                </div>
+            </div>
+            <details class="manual">
+                <summary>Wpisz kod ręcznie</summary>
+                <div class="manual-row">
+                    <input id="manualInput" inputmode="numeric" pattern="[0-9]*" minlength="8" maxlength="18" placeholder="Wpisz EAN" />
+                    <button id="setManualBtn" class="secondary">Ustaw</button>
+                </div>
+            </details>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <small>Prototyp • Działa offline • Nie wysyła danych</small>
+    </footer>
+
+    <!-- ZXing dla skanowania kodów kreskowych -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" integrity="sha256-E2QeS1JRmYzKqH0siQ8sBR2oKf3Mt7Jlws+eAqzjD7M=" crossorigin="anonymous"></script>
+    <script src="script.js"></script>
+</body>
+</html>
+
+

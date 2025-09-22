@@ -1,0 +1,90 @@
+/* Reset i podstawy */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.app-header, .app-footer {
+  padding: 12px 16px;
+  background: #0f172a;
+  color: #fff;
+}
+
+.app-header h1 { margin: 0; font-size: 20px; }
+.app-footer { text-align: center; font-size: 12px; }
+
+.app-main { padding: 12px; display: grid; gap: 16px; }
+
+.camera-section .video-wrapper {
+  position: relative;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+}
+
+video#preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+canvas.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.scanner-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 15%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #22c55e, transparent);
+  animation: scan 3s linear infinite;
+}
+
+@keyframes scan {
+  0% { top: 15%; }
+  50% { top: 85%; }
+  100% { top: 15%; }
+}
+
+.controls { display: flex; gap: 8px; margin-top: 10px; }
+select, button, input {
+  font-size: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+button {
+  cursor: pointer;
+}
+button.primary { background: #2563eb; color: white; border-color: #1d4ed8; }
+button.secondary { background: #e2e8f0; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+
+.hint { margin: 8px 0 0; color: #475569; font-size: 14px; }
+
+.result-section { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; }
+.result-section h2 { margin: 0 0 8px; font-size: 18px; }
+.result-box { display: grid; gap: 8px; }
+.result-box .code { font-size: 22px; font-weight: 700; letter-spacing: 1px; padding: 8px; background: #f1f5f9; border-radius: 8px; }
+.result-box .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.manual summary { cursor: pointer; margin-top: 8px; }
+.manual .manual-row { display: flex; gap: 8px; margin-top: 8px; }
+.manual input { flex: 1; }
+
+@media (min-width: 768px) {
+  .app-main { max-width: 720px; margin: 0 auto; }
+}
+
+
