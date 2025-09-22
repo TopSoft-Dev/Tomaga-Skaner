@@ -27,6 +27,7 @@
   let isScanning = false;
   let triedAutoStart = false;
   let scanTickerId = null;
+  let isDecoding = false;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
   const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
@@ -178,7 +179,8 @@
     }
 
     const doScanOnce = async () => {
-      if (!mediaStream) return;
+      if (!mediaStream || isDecoding) return;
+      isDecoding = true;
       try {
         if (nativeDetector) {
           const results = await nativeDetector.detect(videoElement);
@@ -196,22 +198,20 @@
           }
         }
       } catch (_) {}
+      finally { isDecoding = false; }
     };
-
-    // Zsynchronizuj z animacją paska skanującego: restart i skan w połowie cyklu, potem co 1.5s
-    if (scannerLineEl) {
-      try {
-        scannerLineEl.style.animation = 'none';
-        // reflow
-        void scannerLineEl.offsetHeight;
-      } catch (_) {}
-      scannerLineEl.style.animation = '';
-    }
-    // 3s cykl, środek po 0.75s, potem co 1.5s
-    setTimeout(() => {
+    // Szybka pętla skanowania: natywny co 250ms, ZXing w pętli z oddechem klatki
+    if (nativeDetector) {
       doScanOnce();
-      scanTickerId = window.setInterval(doScanOnce, 1500);
-    }, 750);
+      scanIntervalId = window.setInterval(doScanOnce, 250);
+    } else if (zxingReader) {
+      const zxingLoop = async () => {
+        if (!mediaStream || !zxingReader) return;
+        await doScanOnce();
+        if (mediaStream && zxingReader) requestAnimationFrame(zxingLoop);
+      };
+      requestAnimationFrame(zxingLoop);
+    }
   }
 
   function playBeep() {
@@ -223,14 +223,14 @@
       o.frequency.value = 880;
       o.connect(g);
       g.connect(ctx.destination);
-      g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.01);
-      o.start();
-      setTimeout(() => {
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
-        o.stop(ctx.currentTime + 0.12);
-        ctx.close();
-      }, 120);
+      const now = ctx.currentTime;
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.5, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      o.start(now);
+      o.stop(now + 0.13);
+      o.onended = () => { try { ctx.close(); } catch(_) {} };
     } catch (_) {}
   }
 
