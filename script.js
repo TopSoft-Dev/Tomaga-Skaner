@@ -6,6 +6,7 @@
   const hint = document.getElementById('hint');
   const codeBox = document.getElementById('code');
   const codeTypeEl = document.getElementById('codeType');
+  const scannerLineEl = document.querySelector('.scanner-line');
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -22,6 +23,8 @@
   let currentCameraIdx = 0;
   let isScanning = false;
   let isCooldown = false;
+  let triedAutoStart = false;
+  let scanTickerId = null;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
   const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
@@ -127,6 +130,10 @@
         clearInterval(scanIntervalId);
         scanIntervalId = null;
       }
+      if (scanTickerId) {
+        clearInterval(scanTickerId);
+        scanTickerId = null;
+      }
       if (zxingReader) {
         zxingReader.reset();
         zxingReader = null;
@@ -164,7 +171,7 @@
       zxingReader = new ZXing.BrowserMultiFormatReader();
     }
 
-    const scan = async () => {
+    const doScanOnce = async () => {
       if (!mediaStream) return;
       try {
         if (nativeDetector) {
@@ -173,38 +180,32 @@
             const first = results[0];
             const value = first.rawValue;
             const fmt = first.format || first.type;
-            if (value) {
-              onDetected(value, fmt);
-            }
+            if (value) onDetected(value, fmt);
           }
         } else if (zxingReader) {
           const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
           if (result && result.text) {
-            // ZXing format może być w result.barcodeFormat lub result.format
             const fmt = result.barcodeFormat || result.format;
             onDetected(result.text, fmt);
           }
         }
-      } catch (err) {
-        // Ignoruj sporadyczne błędy, kontynuuj pętlę
-      }
+      } catch (_) {}
     };
 
-    if (nativeDetector) {
-      // szybka pętla na natywnym detektorze
-      scanIntervalId = window.setInterval(scan, 200);
-    } else if (zxingReader) {
-      // dla ZXing wywołujemy cyklicznie aby nie blokować UI
-      const zxingLoop = async () => {
-        if (!mediaStream || !zxingReader) return;
-        const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
-        if (result && result.text && result.text !== lastResult) {
-          onDetected(result.text);
-        }
-        if (mediaStream && zxingReader) requestAnimationFrame(zxingLoop);
-      };
-      requestAnimationFrame(zxingLoop);
+    // Zsynchronizuj z animacją paska skanującego: restart i skan w połowie cyklu, potem co 1.5s
+    if (scannerLineEl) {
+      try {
+        scannerLineEl.style.animation = 'none';
+        // reflow
+        void scannerLineEl.offsetHeight;
+      } catch (_) {}
+      scannerLineEl.style.animation = '';
     }
+    // 3s cykl, środek po 0.75s, potem co 1.5s
+    setTimeout(() => {
+      doScanOnce();
+      scanTickerId = window.setInterval(doScanOnce, 1500);
+    }, 750);
   }
 
   function playBeep() {
@@ -212,18 +213,18 @@
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.type = 'sine';
+      o.type = 'square';
       o.frequency.value = 880;
       o.connect(g);
       g.connect(ctx.destination);
       g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.01);
       o.start();
       setTimeout(() => {
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.05);
-        o.stop(ctx.currentTime + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
+        o.stop(ctx.currentTime + 0.12);
         ctx.close();
-      }, 60);
+      }, 120);
     } catch (_) {}
   }
 
@@ -236,28 +237,26 @@
   }
 
   function onDetected(value, rawType) {
-    if (isCooldown) return;
     // filtruj do cyfr i typowych długości EAN
     const onlyDigits = String(value).replace(/\D/g, '');
     if (onlyDigits.length < 8 || onlyDigits.length > 18) return;
+    const isSame = onlyDigits === lastResult;
     setResult(onlyDigits);
     // typ kodu
     const mappedType = (rawType || '').toString().toUpperCase().replace('_', '-');
     const friendly = mappedType.startsWith('EAN') || mappedType.startsWith('UPC') ? mappedType : inferTypeFromDigits(onlyDigits);
     if (codeTypeEl) codeTypeEl.textContent = friendly;
-    playBeep();
-    if (navigator.vibrate) { try { navigator.vibrate(80); } catch(_) {} }
-    // flash wizualny
-    const wrapper = videoElement.parentElement;
-    if (wrapper) {
-      wrapper.classList.remove('flash-ok');
-      void wrapper.offsetWidth;
-      wrapper.classList.add('flash-ok');
-      setTimeout(() => wrapper.classList.remove('flash-ok'), 300);
+    if (!isSame) {
+      playBeep();
+      if (navigator.vibrate) { try { navigator.vibrate(80); } catch(_) {} }
+      const wrapper = videoElement.parentElement;
+      if (wrapper) {
+        wrapper.classList.remove('flash-ok');
+        void wrapper.offsetWidth;
+        wrapper.classList.add('flash-ok');
+        setTimeout(() => wrapper.classList.remove('flash-ok'), 300);
+      }
     }
-    // cooldown, aby uniknąć powtarzania
-    isCooldown = true;
-    setTimeout(() => { isCooldown = false; }, 1200);
     hint.textContent = 'Zeskanowano. Możesz skopiować lub udostępnić kod.';
   }
 
@@ -276,15 +275,18 @@
   // brak ręcznego wpisu
 
   async function autoStart() {
+    if (triedAutoStart) return;
+    triedAutoStart = true;
     await enumerateCameras();
     try {
-      // próbujemy wystartować kamerę od razu (pozwolenie wywoła prompt)
       await startCamera();
-    } catch (_) {
-      // brak uprawnień lub błąd – zostaw komunikat i pozwól użytkownikowi zmienić ustawienia
+    } catch (err) {
+      hint.textContent = 'Nie można uruchomić kamery automatycznie. Sprawdź uprawnienia i HTTPS.';
     }
   }
-  window.addEventListener('pageshow', () => autoStart());
+  window.addEventListener('pageshow', autoStart);
+  window.addEventListener('load', autoStart);
+  document.addEventListener('DOMContentLoaded', autoStart);
 
   // Rejestracja Service Workera (PWA)
   if ('serviceWorker' in navigator) {
