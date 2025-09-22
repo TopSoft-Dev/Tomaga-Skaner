@@ -1,11 +1,9 @@
-const CACHE_NAME = 'tomaga-skaner-v1';
+const CACHE_NAME = 'tomaga-skaner-v2';
 const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/script.js',
-  '/manifest.webmanifest',
-  'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'
+  'index.html',
+  'style.css',
+  'script.js',
+  'manifest.webmanifest'
 ];
 
 self.addEventListener('install', event => {

@@ -1,17 +1,12 @@
 (() => {
   const videoElement = document.getElementById('preview');
   const overlayCanvas = document.getElementById('overlay');
-  const cameraSelect = document.getElementById('cameraSelect');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
+  const cameraToggleBtn = document.getElementById('cameraToggleBtn');
+  const startStopBtn = document.getElementById('startStopBtn');
   const torchBtn = document.getElementById('torchBtn');
   const hint = document.getElementById('hint');
   const codeBox = document.getElementById('code');
-  const copyBtn = document.getElementById('copyBtn');
-  const shareBtn = document.getElementById('shareBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const manualInput = document.getElementById('manualInput');
-  const setManualBtn = document.getElementById('setManualBtn');
+  // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
   let mediaStream = null;
@@ -22,42 +17,40 @@
   /** @type {number|null} */
   let scanIntervalId = null;
   let lastResult = '';
+  /** @type {MediaDeviceInfo[]} */
+  let cameraDevices = [];
+  let currentCameraIdx = 0;
+  let isScanning = false;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
   const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 
-  function setButtonsScanningState(isScanning) {
-    startBtn.disabled = isScanning;
-    stopBtn.disabled = !isScanning;
-    torchBtn.disabled = !isScanning;
+  function setButtonsScanningState(scanning) {
+    isScanning = scanning;
+    startStopBtn.textContent = scanning ? 'Stop' : 'Start';
+    startStopBtn.setAttribute('aria-label', scanning ? 'Stop skanowania' : 'Start skanowania');
+    torchBtn.disabled = !scanning;
   }
 
   function setResult(resultText) {
     lastResult = resultText;
     codeBox.textContent = resultText || '—';
-    const hasResult = Boolean(resultText);
-    copyBtn.disabled = !hasResult;
-    shareBtn.disabled = !hasResult || !('share' in navigator);
-    clearBtn.disabled = !hasResult;
+  }
+
+  function updateCameraToggleLabel() {
+    const total = cameraDevices.length;
+    const idx = total ? (currentCameraIdx % total) + 1 : 0;
+    cameraToggleBtn.textContent = 'Zmień kamerę';
+    cameraToggleBtn.title = total ? `Zmień kamerę (${idx}/${total})` : 'Brak aparatu';
+    cameraToggleBtn.disabled = total <= 1;
   }
 
   async function enumerateCameras() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoInputs = devices.filter(d => d.kind === 'videoinput');
-      cameraSelect.innerHTML = '';
-      for (const device of videoInputs) {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.textContent = device.label || `Kamera ${cameraSelect.length + 1}`;
-        cameraSelect.appendChild(option);
-      }
-      if (videoInputs.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'Brak kamery';
-        cameraSelect.appendChild(option);
-      }
+      cameraDevices = devices.filter(d => d.kind === 'videoinput');
+      if (currentCameraIdx >= cameraDevices.length) currentCameraIdx = 0;
+      updateCameraToggleLabel();
     } catch (err) {
       console.error(err);
     }
@@ -69,9 +62,16 @@
     const { width, height } = overlayCanvas;
     ctx.clearRect(0, 0, width, height);
     const boxWidth = width * 0.8;
-    const boxHeight = height * 0.3;
+    const boxHeight = height * 0.25;
     const x = (width - boxWidth) / 2;
     const y = (height - boxHeight) / 2;
+    // maska przyciemniająca poza obszarem celu
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, width, y);
+    ctx.fillRect(0, y + boxHeight, width, height - (y + boxHeight));
+    ctx.fillRect(0, y, x, boxHeight);
+    ctx.fillRect(x + boxWidth, y, width - (x + boxWidth), boxHeight);
+    // ramka
     ctx.strokeStyle = '#22c55e';
     ctx.lineWidth = 3;
     ctx.strokeRect(x, y, boxWidth, boxHeight);
@@ -84,7 +84,7 @@
         audio: false,
         video: {
           facingMode: 'environment',
-          deviceId: cameraSelect.value ? { exact: cameraSelect.value } : undefined,
+          deviceId: cameraDevices[currentCameraIdx]?.deviceId ? { exact: cameraDevices[currentCameraIdx].deviceId } : undefined,
           width: { ideal: 1280 },
           height: { ideal: 720 },
           focusMode: 'continuous'
@@ -222,33 +222,26 @@
     hint.textContent = 'Zeskanowano. Możesz skopiować lub udostępnić kod.';
   }
 
-  startBtn.addEventListener('click', () => startCamera());
-  stopBtn.addEventListener('click', () => stopCamera());
-  torchBtn.addEventListener('click', () => toggleTorch());
-  copyBtn.addEventListener('click', async () => {
-    if (!lastResult) return;
-    try {
-      await navigator.clipboard.writeText(lastResult);
-      hint.textContent = 'Skopiowano do schowka.';
-    } catch (_) {
-      hint.textContent = 'Nie udało się skopiować.';
+  startStopBtn.addEventListener('click', async () => {
+    if (isScanning) {
+      await stopCamera();
+    } else {
+      await startCamera();
     }
   });
-  shareBtn.addEventListener('click', async () => {
-    if (!lastResult || !navigator.share) return;
-    try {
-      await navigator.share({ title: 'Kod EAN', text: lastResult });
-    } catch (_) {}
+  torchBtn.addEventListener('click', () => toggleTorch());
+  cameraToggleBtn.addEventListener('click', async () => {
+    if (cameraDevices.length === 0) return;
+    currentCameraIdx = (currentCameraIdx + 1) % cameraDevices.length;
+    updateCameraToggleLabel();
+    // jeśli skanujemy, przełącz od razu
+    if (mediaStream) {
+      await stopCamera();
+      await startCamera();
+    }
   });
-  clearBtn.addEventListener('click', () => {
-    setResult('');
-    hint.textContent = 'Wyczyść – zeskanuj ponownie.';
-  });
-  setManualBtn.addEventListener('click', () => {
-    const v = manualInput.value.trim();
-    const only = v.replace(/\D/g, '');
-    if (only) onDetected(only);
-  });
+  // usunięto przyciski kopiuj/udostępnij/wyczyść
+  // brak ręcznego wpisu
 
   window.addEventListener('pageshow', () => enumerateCameras());
   // Wymuś enumerację po przyznaniu uprawnień

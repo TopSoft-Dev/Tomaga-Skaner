@@ -16,7 +16,7 @@
 </head>
 <body>
     <header class="app-header">
-        <h1>Tomaga Skaner</h1>
+        <h1>Tomaga - Skaner</h1>
     </header>
 
     <main class="app-main">
@@ -26,41 +26,26 @@
                 <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
                 <div class="scanner-line" aria-hidden="true"></div>
             </div>
-            <div class="controls">
-                <select id="cameraSelect" aria-label="Wybór kamery"></select>
-                <button id="startBtn" class="primary">Start</button>
-                <button id="stopBtn" class="secondary" disabled>Stop</button>
-                <button id="torchBtn" class="secondary" disabled>Latarka</button>
-            </div>
             <p id="hint" class="hint">Udziel przeglądarce dostępu do kamery. Skieruj aparat na kod kreskowy (EAN-13).</p>
         </section>
 
         <section class="result-section">
-            <h2>Wynik</h2>
             <div class="result-box">
                 <div class="code" id="code">—</div>
-                <div class="actions">
-                    <button id="copyBtn" class="secondary" disabled>Kopiuj</button>
-                    <button id="shareBtn" class="secondary" disabled>Udostępnij</button>
-                    <button id="clearBtn" class="secondary" disabled>Wyczyść</button>
-                </div>
             </div>
-            <details class="manual">
-                <summary>Wpisz kod ręcznie</summary>
-                <div class="manual-row">
-                    <input id="manualInput" inputmode="numeric" pattern="[0-9]*" minlength="8" maxlength="18" placeholder="Wpisz EAN" />
-                    <button id="setManualBtn" class="secondary">Ustaw</button>
-                </div>
-            </details>
         </section>
+        
+        <div class="controls controls-bottom">
+            <button id="cameraToggleBtn" class="secondary" aria-label="Zmień kamerę" title="Zmień kamerę">Zmień kamerę</button>
+            <button id="startStopBtn" class="primary" aria-label="Start skanowania">Start</button>
+            <button id="torchBtn" class="secondary" aria-label="Latarka" title="Latarka" disabled>Latarka</button>
+        </div>
     </main>
 
-    <footer class="app-footer">
-        <small>Prototyp • Działa offline • Nie wysyła danych</small>
-    </footer>
+    
 
     <!-- ZXing dla skanowania kodów kreskowych -->
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" integrity="sha256-E2QeS1JRmYzKqH0siQ8sBR2oKf3Mt7Jlws+eAqzjD7M=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" crossorigin="anonymous"></script>
     <script src="script.js"></script>
 </body>
 </html>
