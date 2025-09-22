@@ -9,6 +9,7 @@
   const priceBtn = document.getElementById('priceBtn');
   const searchBtn = document.getElementById('searchBtn');
   const clearCodeBtn = document.getElementById('clearCodeBtn');
+  const sendBtn = document.getElementById('sendBtn');
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -31,6 +32,18 @@
   const hasNativeDetector = 'BarcodeDetector' in window;
   const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 
+  function translateCameraError(err) {
+    const name = (err && (err.name || err.code || err.message)) || '';
+    const n = String(name).toLowerCase();
+    if (n.includes('notallowed') || n.includes('permission')) return 'Błąd kamery: Nie nadano uprawnień';
+    if (n.includes('notfound') || n.includes('devicesnotfound')) return 'Błąd kamery: Nie znaleziono kamery';
+    if (n.includes('notreadable') || n.includes('trackstart')) return 'Błąd kamery: Kamera jest zajęta przez inną aplikację';
+    if (n.includes('overconstrained')) return 'Błąd kamery: Brak kamery spełniającej wymagania';
+    if (n.includes('security')) return 'Błąd kamery: Odmowa z powodów bezpieczeństwa (wymagane HTTPS)';
+    if (n.includes('abort')) return 'Błąd kamery: Operacja przerwana';
+    return 'Błąd kamery: Nieznany problem z dostępem do kamery';
+  }
+
   function setButtonsScanningState(scanning) {
     isScanning = scanning;
     torchBtn.disabled = !scanning;
@@ -44,6 +57,7 @@
     if (priceBtn) priceBtn.disabled = !has;
     if (searchBtn) searchBtn.disabled = !has;
     if (clearCodeBtn) clearCodeBtn.disabled = !has;
+    if (sendBtn) sendBtn.disabled = !has;
   }
 
   function updateCameraToggleLabel() {
@@ -162,11 +176,15 @@
       new ResizeObserver(resizeOverlay).observe(videoElement);
       showAim();
       setButtonsScanningState(true);
+      hint.classList.remove('hint-warning');
+      hint.classList.remove('hint-success');
       hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
       await startScanningLoop();
     } catch (err) {
       console.error('Błąd kamery:', err);
-      hint.textContent = 'Nie można uruchomić kamery. Sprawdź uprawnienia.';
+      hint.classList.add('hint-warning');
+      hint.classList.remove('hint-success');
+      hint.textContent = translateCameraError(err);
       setButtonsScanningState(false);
     }
   }
@@ -354,7 +372,9 @@
         setTimeout(runFeedback, 80);
       }
     }
-    hint.textContent = 'Zeskanowano. Możesz udostępnić, sprawdzić cenę lub wyszukać.';
+    hint.classList.remove('hint-warning');
+    hint.classList.add('hint-success');
+    hint.textContent = 'Zeskanowano kod pomyślnie';
     // Po udanym skanie zatrzymaj dalsze skanowanie i przyciemnij celownik
     dimAim();
     if (scanTickerId) { clearInterval(scanTickerId); scanTickerId = null; }
@@ -382,7 +402,9 @@
     try {
       await startCamera();
     } catch (err) {
-      hint.textContent = 'Nie można uruchomić kamery automatycznie. Sprawdź uprawnienia i HTTPS.';
+      hint.classList.add('hint-warning');
+      hint.classList.remove('hint-success');
+      hint.textContent = translateCameraError(err);
     }
   }
   window.addEventListener('pageshow', autoStart);
@@ -409,9 +431,33 @@
       window.open(url, '_blank', 'noopener');
     });
   }
+  if (sendBtn) {
+    sendBtn.addEventListener('click', async () => {
+      try {
+        hint.classList.remove('hint-success');
+        hint.classList.remove('hint-warning');
+        hint.textContent = 'Wysyłanie do Firestore…';
+        const { db } = await import('./firebase-init.js');
+        const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
+        await addDoc(collection(db, 'scans'), {
+          ean: lastResult,
+          createdAt: serverTimestamp(),
+          ua: navigator.userAgent
+        });
+        hint.classList.add('hint-success');
+        hint.textContent = 'Zapisano w Firestore';
+      } catch (err) {
+        console.error(err);
+        hint.classList.add('hint-warning');
+        hint.textContent = 'Błąd zapisu do Firestore';
+      }
+    });
+  }
   if (clearCodeBtn) {
     clearCodeBtn.addEventListener('click', async () => {
       setResult('');
+      hint.classList.remove('hint-warning');
+      hint.classList.remove('hint-success');
       hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
       showAim();
       // wznów skanowanie
