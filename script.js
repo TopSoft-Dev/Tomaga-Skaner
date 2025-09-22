@@ -9,7 +9,6 @@
   const priceBtn = document.getElementById('priceBtn');
   const searchBtn = document.getElementById('searchBtn');
   const clearCodeBtn = document.getElementById('clearCodeBtn');
-  const scannerLineEl = document.querySelector('.scanner-line');
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -97,6 +96,32 @@
     ctx.strokeRect(x, y, boxWidth, boxHeight);
   }
 
+  function showAim() {
+    overlayCanvas.style.visibility = 'visible';
+    overlayCanvas.classList.remove('hiding');
+    overlayCanvas.classList.add('showing');
+    setTimeout(() => overlayCanvas.classList.remove('showing'), 240);
+  }
+
+  function hideAim() {
+    overlayCanvas.classList.remove('showing');
+    overlayCanvas.classList.add('hiding');
+    setTimeout(() => {
+      overlayCanvas.style.visibility = 'hidden';
+      overlayCanvas.classList.remove('hiding');
+    }, 220);
+  }
+
+  function getTargetRect() {
+    const width = overlayCanvas.width;
+    const height = overlayCanvas.height;
+    const boxWidth = width * 0.8;
+    const boxHeight = height * 0.25;
+    const x = (width - boxWidth) / 2;
+    const y = (height - boxHeight) / 2;
+    return { x, y, width: boxWidth, height: boxHeight, cx: x + boxWidth / 2, cy: y + boxHeight / 2 };
+  }
+
   async function startCamera() {
     try {
       setResult('');
@@ -121,6 +146,7 @@
       };
       resizeOverlay();
       new ResizeObserver(resizeOverlay).observe(videoElement);
+      showAim();
       setButtonsScanningState(true);
       hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
       await startScanningLoop();
@@ -185,16 +211,41 @@
         if (nativeDetector) {
           const results = await nativeDetector.detect(videoElement);
           if (results && results.length > 0) {
-            const first = results[0];
-            const value = first.rawValue;
-            const fmt = first.format || first.type;
-            if (value) onDetected(value, fmt);
+            const target = getTargetRect();
+            // wybierz kod, którego środek pudełka leży w celu, a jeśli żaden – najbliższy centrum celu
+            let best = null;
+            let bestDist = Infinity;
+            for (const r of results) {
+              const bb = r.boundingBox;
+              const cx = bb.x + bb.width / 2;
+              const cy = bb.y + bb.height / 2;
+              const inside = cx >= target.x && cx <= target.x + target.width && cy >= target.y && cy <= target.y + target.height;
+              const dx = cx - target.cx;
+              const dy = cy - target.cy;
+              const dist2 = dx * dx + dy * dy - (inside ? 1e6 : 0); // preferuj te w środku (mniejsza „efektywna” odległość)
+              if (dist2 < bestDist) { bestDist = dist2; best = r; }
+            }
+            if (best && best.rawValue) {
+              const fmt = best.format || best.type;
+              onDetected(best.rawValue, fmt);
+            }
           }
         } else if (zxingReader) {
           const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
           if (result && result.text) {
-            const fmt = result.barcodeFormat || result.format;
-            onDetected(result.text, fmt);
+            // Spróbuj sprawdzić, czy punkty leżą w celu; jeśli brak punktów, akceptuj
+            const pts = result.resultPoints || result.points || [];
+            let accept = true;
+            const target = getTargetRect();
+            if (pts.length) {
+              const avg = pts.reduce((a, p) => ({ x: a.x + (p.x || p.getX?.() || 0), y: a.y + (p.y || p.getY?.() || 0) }), { x: 0, y: 0 });
+              avg.x /= pts.length; avg.y /= pts.length;
+              accept = avg.x >= target.x && avg.x <= target.x + target.width && avg.y >= target.y && avg.y <= target.y + target.height;
+            }
+            if (accept) {
+              const fmt = result.barcodeFormat || result.format;
+              onDetected(result.text, fmt);
+            }
           }
         }
       } catch (_) {}
@@ -269,8 +320,8 @@
       }
     }
     hint.textContent = 'Zeskanowano. Możesz udostępnić, sprawdzić cenę lub wyszukać.';
-    // Po udanym skanie zatrzymaj dalsze skanowanie i ukryj animację
-    if (scannerLineEl) scannerLineEl.style.visibility = 'hidden';
+    // Po udanym skanie zatrzymaj dalsze skanowanie i schowaj celownik
+    hideAim();
     if (scanTickerId) { clearInterval(scanTickerId); scanTickerId = null; }
     if (scanIntervalId) { clearInterval(scanIntervalId); scanIntervalId = null; }
   }
@@ -327,7 +378,7 @@
     clearCodeBtn.addEventListener('click', async () => {
       setResult('');
       hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
-      if (scannerLineEl) scannerLineEl.style.visibility = '';
+      showAim();
       // wznów skanowanie
       await startScanningLoop();
     });

@@ -42,16 +42,15 @@ canvas.overlay {
   height: 100%;
   pointer-events: none;
 }
-
 /* Feedback wizualny po skanie */
-.flash-ok {
-  animation: flash 250ms ease-out;
-}
+.flash-ok { animation: flash 250ms ease-out; }
+@keyframes flash { from { box-shadow: 0 0 0 0 rgba(34,197,94,0.9); } to { box-shadow: 0 0 0 14px rgba(34,197,94,0); } }
 
-@keyframes flash {
-  from { box-shadow: 0 0 0 0 rgba(34,197,94,0.9); }
-  to { box-shadow: 0 0 0 14px rgba(34,197,94,0); }
-}
+/* Animacje pojawiania/chowania celownika */
+.overlay.showing { animation: overlayFadeIn 220ms ease-out forwards; }
+.overlay.hiding { animation: overlayFadeOut 220ms ease-in forwards; }
+@keyframes overlayFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlayFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
 .scanner-line {
   position: absolute;
