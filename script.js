@@ -15,6 +15,7 @@
   const modalBody = document.getElementById('modalBody');
   const modalActions = document.getElementById('modalActions');
   const modalOk = document.getElementById('modalOk');
+  const modalSpinner = modalBody ? modalBody.querySelector('.spinner') : null;
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -33,6 +34,7 @@
   let triedAutoStart = false;
   let scanTickerId = null;
   let isDecoding = false;
+  let isFirestoreOk = false;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
   const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
@@ -73,7 +75,7 @@
     codeBox.textContent = resultText || '—';
     const has = Boolean(resultText);
     if (shareBtn) shareBtn.disabled = !has || !('share' in navigator);
-    if (priceBtn) priceBtn.disabled = !has;
+    if (priceBtn) priceBtn.disabled = !has || !isFirestoreOk;
     if (searchBtn) searchBtn.disabled = !has;
     if (clearCodeBtn) clearCodeBtn.disabled = !has;
     
@@ -418,6 +420,10 @@
     if (triedAutoStart) return;
     triedAutoStart = true;
     await enumerateCameras();
+    // sprawdź dostępność Firestore
+    try {
+      await checkFirestoreAvailability();
+    } catch (_) {}
     try {
       await startCamera();
     } catch (err) {
@@ -446,7 +452,7 @@
         hint.textContent = 'Wysyłanie zapytania o cenę…';
         const userId = getOrCreateUserId();
         const { db } = await import('./firebase-init.js');
-        const { doc, setDoc, getDoc, onSnapshot, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
+        const { doc, setDoc, getDoc, onSnapshot, deleteDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
         // dokument o ID = userId, żeby nadpisywać i mieć 1 aktywne żądanie na użytkownika
         await setDoc(doc(db, 'requests', userId), {
           userId,
@@ -463,6 +469,7 @@
         modal.classList.remove('hidden');
         modalActions.classList.add('hidden');
         modalText.textContent = 'Oczekiwanie na odpowiedź serwera…';
+        if (modalSpinner) modalSpinner.style.display = '';
 
         // timeout 15s
         let resolved = false;
@@ -471,6 +478,7 @@
           resolved = true;
           modalText.textContent = 'Przekroczono czas oczekiwania. Spróbuj ponownie.';
           modalActions.classList.remove('hidden');
+          if (modalSpinner) modalSpinner.style.display = 'none';
         }, 15000);
 
         // nasłuchuj odpowiedzi serwera
@@ -483,17 +491,32 @@
             const { name, netto, brutto } = d.result;
             modalText.textContent = `Nazwa produktu:\n${name}\n\nCena zakupu (Netto): ${netto}\nCena w sklepie (Brutto): ${brutto}`;
             modalActions.classList.remove('hidden');
+            if (modalSpinner) modalSpinner.style.display = 'none';
           } else if (d.status === 'not_found' || d.status === 'error') {
             resolved = true; clearTimeout(timeoutId); unsub();
             modalText.textContent = d.error || 'Nie znaleziono produktu.';
             modalActions.classList.remove('hidden');
+            if (modalSpinner) modalSpinner.style.display = 'none';
           }
         }, () => {});
 
-        modalOk.onclick = () => {
+        modalOk.onclick = async () => {
           try { unsub(); } catch(_) {}
           try { clearTimeout(timeoutId); } catch(_) {}
+          // jeśli nie mamy wyniku (timeout/oczekiwanie), usuń dokument, by nie zaśmiecać kolekcji
+          try {
+            if (!resolved) {
+              await deleteDoc(doc(db, 'requests', userId));
+            }
+          } catch (_) {}
           modal.classList.add('hidden');
+          // wyczyść EAN i wznow skanowanie
+          setResult('');
+          hint.classList.remove('hint-warning');
+          hint.classList.remove('hint-success');
+          hint.textContent = 'Skieruj aparat na kod EAN. Staraj się wypełnić ramkę.';
+          showAim();
+          await startScanningLoop();
         };
       } catch (err) {
         console.error(err);
@@ -530,6 +553,31 @@
       navigator.serviceWorker.register(swUrl).catch(() => {});
     });
   }
+
+  // Sprawdzenie dostępności Firestore (iLIVE)
+  async function checkFirestoreAvailability() {
+    try {
+      const { db } = await import('./firebase-init.js');
+      const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 3000);
+      // Prostą operację read trzymamy w Promise.race z timeoutem
+      await Promise.race([
+        getDoc(doc(db, '__health__', 'ping')),
+        new Promise((_, rej) => ctrl.signal.addEventListener('abort', () => rej(new Error('timeout')), { once: true }))
+      ]);
+      isFirestoreOk = true;
+    } catch (_) {
+      isFirestoreOk = false;
+    } finally {
+      // Zaktualizuj stan przycisku według bieżącego kodu
+      const has = Boolean(lastResult);
+      if (priceBtn) priceBtn.disabled = !has || !isFirestoreOk;
+    }
+  }
+
+  window.addEventListener('online', () => { checkFirestoreAvailability(); });
+  window.addEventListener('offline', () => { isFirestoreOk = false; if (priceBtn) priceBtn.disabled = true; });
 })();
 
 
