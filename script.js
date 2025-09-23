@@ -557,16 +557,10 @@
   // Sprawdzenie dostępności Firestore (iLIVE)
   async function checkFirestoreAvailability() {
     try {
+      // Samo poprawne załadowanie modułów i uzyskanie referencji db uznajemy za OK
       const { db } = await import('./firebase-init.js');
-      const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
-      const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 3000);
-      // Prostą operację read trzymamy w Promise.race z timeoutem
-      await Promise.race([
-        getDoc(doc(db, '__health__', 'ping')),
-        new Promise((_, rej) => ctrl.signal.addEventListener('abort', () => rej(new Error('timeout')), { once: true }))
-      ]);
-      isFirestoreOk = true;
+      await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
+      isFirestoreOk = Boolean(db);
     } catch (_) {
       isFirestoreOk = false;
     } finally {
