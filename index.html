@@ -47,7 +47,19 @@
         </div>
     </main>
 
-    
+    <!-- Modal -->
+    <div id="modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-body" id="modalBody">
+                <div class="spinner"></div>
+                <div class="modal-text" id="modalText">Oczekiwanie na odpowiedź serwera…</div>
+            </div>
+            <div class="modal-actions hidden" id="modalActions">
+                <button id="modalOk" class="primary">OK</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ZXing dla skanowania kodów kreskowych -->
     <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" crossorigin="anonymous"></script>

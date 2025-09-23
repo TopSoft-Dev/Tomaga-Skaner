@@ -9,6 +9,12 @@
   const priceBtn = document.getElementById('priceBtn');
   const searchBtn = document.getElementById('searchBtn');
   const clearCodeBtn = document.getElementById('clearCodeBtn');
+  // modal
+  const modal = document.getElementById('modal');
+  const modalText = document.getElementById('modalText');
+  const modalBody = document.getElementById('modalBody');
+  const modalActions = document.getElementById('modalActions');
+  const modalOk = document.getElementById('modalOk');
   // usunięto ręczny wpis
 
   /** @type {MediaStream|null} */
@@ -440,7 +446,7 @@
         hint.textContent = 'Wysyłanie zapytania o cenę…';
         const userId = getOrCreateUserId();
         const { db } = await import('./firebase-init.js');
-        const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
+        const { doc, setDoc, getDoc, onSnapshot, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
         // dokument o ID = userId, żeby nadpisywać i mieć 1 aktywne żądanie na użytkownika
         await setDoc(doc(db, 'requests', userId), {
           userId,
@@ -452,6 +458,43 @@
         });
         hint.classList.add('hint-success');
         hint.textContent = 'Zeskanowano kod pomyślnie • Zapytanie o cenę wysłane';
+
+        // pokaż modal z loaderem, blokuj UI
+        modal.classList.remove('hidden');
+        modalActions.classList.add('hidden');
+        modalText.textContent = 'Oczekiwanie na odpowiedź serwera…';
+
+        // timeout 15s
+        let resolved = false;
+        const timeoutId = setTimeout(() => {
+          if (resolved) return;
+          resolved = true;
+          modalText.textContent = 'Przekroczono czas oczekiwania. Spróbuj ponownie.';
+          modalActions.classList.remove('hidden');
+        }, 15000);
+
+        // nasłuchuj odpowiedzi serwera
+        const unsub = onSnapshot(doc(db, 'requests', userId), (snap) => {
+          const d = snap.data();
+          if (!d) return;
+          if (resolved) return;
+          if (d.status === 'completed' && d.result) {
+            resolved = true; clearTimeout(timeoutId); unsub();
+            const { name, netto, brutto } = d.result;
+            modalText.textContent = `Nazwa produktu:\n${name}\n\nCena zakupu (Netto): ${netto}\nCena w sklepie (Brutto): ${brutto}`;
+            modalActions.classList.remove('hidden');
+          } else if (d.status === 'not_found' || d.status === 'error') {
+            resolved = true; clearTimeout(timeoutId); unsub();
+            modalText.textContent = d.error || 'Nie znaleziono produktu.';
+            modalActions.classList.remove('hidden');
+          }
+        }, () => {});
+
+        modalOk.onclick = () => {
+          try { unsub(); } catch(_) {}
+          try { clearTimeout(timeoutId); } catch(_) {}
+          modal.classList.add('hidden');
+        };
       } catch (err) {
         console.error(err);
         hint.classList.add('hint-warning');
