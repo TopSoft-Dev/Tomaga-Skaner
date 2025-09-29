@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tomaga-skaner-v4';
+const CACHE_NAME = 'tomaga-skaner-v5';
 const APP_SHELL = [
   'index.html',
   'style.css',

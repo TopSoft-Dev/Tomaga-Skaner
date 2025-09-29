@@ -37,7 +37,40 @@
   let isFirestoreOk = false;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
-  const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+  // iOS Safari może używać nazw z myślnikiem (ean-13), Chrome często z podkreślnikiem (ean_13)
+  // Poniżej dynamicznie wykrywamy obsługiwane formaty i normalizujemy listę
+  let detectorFormats = ['ean-13', 'ean-8', 'upc-a', 'upc-e'];
+
+  async function getSupportedDetectorFormats() {
+    if (!hasNativeDetector) return [];
+    try {
+      if (typeof window.BarcodeDetector.getSupportedFormats === 'function') {
+        const fmts = await window.BarcodeDetector.getSupportedFormats();
+        return Array.isArray(fmts) ? fmts : [];
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  function normalizeDesiredFormats(supported) {
+    if (!supported || supported.length === 0) return [];
+    // mapuj alternatywne nazwy
+    const aliases = new Map([
+      ['ean-13', ['ean-13', 'ean_13']],
+      ['ean-8', ['ean-8', 'ean_8']],
+      ['upc-a', ['upc-a', 'upc_a']],
+      ['upc-e', ['upc-e', 'upc_e']]
+    ]);
+    const out = [];
+    for (const [canonical, alts] of aliases.entries()) {
+      if (alts.some(a => supported.includes(a))) {
+        // użyj tej nazwy, którą przeglądarka rozumie
+        const firstMatch = alts.find(a => supported.includes(a));
+        if (firstMatch) out.push(firstMatch);
+      }
+    }
+    return out;
+  }
 
   function translateCameraError(err) {
     const name = (err && (err.name || err.code || err.message)) || '';
@@ -186,7 +219,14 @@
       };
       mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       videoElement.srcObject = mediaStream;
-      await videoElement.play();
+      // Poczekaj aż metadata wideo będzie dostępna na iOS zanim policzymy rozmiary
+      if (videoElement.readyState < 2) {
+        await new Promise(resolve => {
+          const onMeta = () => { try { videoElement.removeEventListener('loadedmetadata', onMeta); } catch(_) {} resolve(); };
+          videoElement.addEventListener('loadedmetadata', onMeta, { once: true });
+        });
+      }
+      try { await videoElement.play(); } catch (_) {}
       // Ustaw rozmiar canvasa równo z video
       const resizeOverlay = () => {
         overlayCanvas.width = videoElement.clientWidth;
@@ -246,7 +286,10 @@
   async function startScanningLoop() {
     if (hasNativeDetector && !nativeDetector) {
       try {
-        nativeDetector = new window.BarcodeDetector({ formats: supportedFormats });
+        const supported = await getSupportedDetectorFormats();
+        const desired = normalizeDesiredFormats(supported);
+        detectorFormats = desired.length ? desired : detectorFormats;
+        nativeDetector = new window.BarcodeDetector({ formats: detectorFormats });
       } catch (_) {
         nativeDetector = null;
       }
@@ -303,16 +346,24 @@
               }
             }
           }
-        } else if (zxingReader) {
-          const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
+        }
+      } catch (_) {}
+      finally { isDecoding = false; }
+    };
+    // Szybka pętla skanowania: natywny co 250ms, ZXing w trybie ciągłym (stabilne na iOS)
+    if (nativeDetector) {
+      doScanOnce();
+      scanIntervalId = window.setInterval(doScanOnce, 250);
+    } else if (zxingReader) {
+      try {
+        zxingReader.decodeFromVideoElementContinuously(videoElement, (result, err) => {
           if (result && result.text) {
-            // ZXing zwykle zwraca pojedynczy wynik; sprawdź, czy jest w pobliżu ramki (z marginesem)
             const pts = result.resultPoints || result.points || [];
             const target = getTargetRect();
             const padded = inflateRect(target, 20);
             let accept = true;
             if (pts.length) {
-              const avg = pts.reduce((a, p) => ({ x: a.x + (p.x || p.getX?.() || 0), y: a.y + (p.y || p.getY?.() || 0) }), { x: 0, y: 0 });
+              const avg = pts.reduce((acc, p) => ({ x: acc.x + (p.x || p.getX?.() || 0), y: acc.y + (p.y || p.getY?.() || 0) }), { x: 0, y: 0 });
               avg.x /= pts.length; avg.y /= pts.length;
               accept = avg.x >= padded.x && avg.x <= padded.x + padded.width && avg.y >= padded.y && avg.y <= padded.y + padded.height;
             }
@@ -321,21 +372,9 @@
               onDetected(result.text, fmt);
             }
           }
-        }
+          // ignoruj NotFoundException itp. – tryb ciągły sam ponawia
+        });
       } catch (_) {}
-      finally { isDecoding = false; }
-    };
-    // Szybka pętla skanowania: natywny co 250ms, ZXing w pętli z oddechem klatki
-    if (nativeDetector) {
-      doScanOnce();
-      scanIntervalId = window.setInterval(doScanOnce, 250);
-    } else if (zxingReader) {
-      const zxingLoop = async () => {
-        if (!mediaStream || !zxingReader) return;
-        await doScanOnce();
-        if (mediaStream && zxingReader) requestAnimationFrame(zxingLoop);
-      };
-      requestAnimationFrame(zxingLoop);
     }
   }
 
@@ -473,6 +512,7 @@
 
         // timeout 15s
         let resolved = false;
+        let gotResult = false;
         const timeoutId = setTimeout(() => {
           if (resolved) return;
           resolved = true;
@@ -487,7 +527,7 @@
           if (!d) return;
           if (resolved) return;
           if (d.status === 'completed' && d.result) {
-            resolved = true; clearTimeout(timeoutId); unsub();
+            resolved = true; gotResult = true; clearTimeout(timeoutId); unsub();
             const { name, netto, brutto } = d.result;
             modalText.textContent = `Nazwa produktu:\n${name}\n\nCena zakupu (Netto): ${netto}\nCena w sklepie (Brutto): ${brutto}`;
             modalActions.classList.remove('hidden');
@@ -505,7 +545,7 @@
           try { clearTimeout(timeoutId); } catch(_) {}
           // jeśli nie mamy wyniku (timeout/oczekiwanie), usuń dokument, by nie zaśmiecać kolekcji
           try {
-            if (!resolved) {
+            if (!resolved || gotResult) {
               await deleteDoc(doc(db, 'requests', userId));
             }
           } catch (_) {}
