@@ -37,40 +37,7 @@
   let isFirestoreOk = false;
 
   const hasNativeDetector = 'BarcodeDetector' in window;
-  // iOS Safari może używać nazw z myślnikiem (ean-13), Chrome często z podkreślnikiem (ean_13)
-  // Poniżej dynamicznie wykrywamy obsługiwane formaty i normalizujemy listę
-  let detectorFormats = ['ean-13', 'ean-8', 'upc-a', 'upc-e'];
-
-  async function getSupportedDetectorFormats() {
-    if (!hasNativeDetector) return [];
-    try {
-      if (typeof window.BarcodeDetector.getSupportedFormats === 'function') {
-        const fmts = await window.BarcodeDetector.getSupportedFormats();
-        return Array.isArray(fmts) ? fmts : [];
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  function normalizeDesiredFormats(supported) {
-    if (!supported || supported.length === 0) return [];
-    // mapuj alternatywne nazwy
-    const aliases = new Map([
-      ['ean-13', ['ean-13', 'ean_13']],
-      ['ean-8', ['ean-8', 'ean_8']],
-      ['upc-a', ['upc-a', 'upc_a']],
-      ['upc-e', ['upc-e', 'upc_e']]
-    ]);
-    const out = [];
-    for (const [canonical, alts] of aliases.entries()) {
-      if (alts.some(a => supported.includes(a))) {
-        // użyj tej nazwy, którą przeglądarka rozumie
-        const firstMatch = alts.find(a => supported.includes(a));
-        if (firstMatch) out.push(firstMatch);
-      }
-    }
-    return out;
-  }
+  const supportedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 
   function translateCameraError(err) {
     const name = (err && (err.name || err.code || err.message)) || '';
@@ -219,14 +186,7 @@
       };
       mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       videoElement.srcObject = mediaStream;
-      // Poczekaj aż metadata wideo będzie dostępna na iOS zanim policzymy rozmiary
-      if (videoElement.readyState < 2) {
-        await new Promise(resolve => {
-          const onMeta = () => { try { videoElement.removeEventListener('loadedmetadata', onMeta); } catch(_) {} resolve(); };
-          videoElement.addEventListener('loadedmetadata', onMeta, { once: true });
-        });
-      }
-      try { await videoElement.play(); } catch (_) {}
+      await videoElement.play();
       // Ustaw rozmiar canvasa równo z video
       const resizeOverlay = () => {
         overlayCanvas.width = videoElement.clientWidth;
@@ -286,10 +246,17 @@
   async function startScanningLoop() {
     if (hasNativeDetector && !nativeDetector) {
       try {
-        const supported = await getSupportedDetectorFormats();
-        const desired = normalizeDesiredFormats(supported);
-        detectorFormats = desired.length ? desired : detectorFormats;
-        nativeDetector = new window.BarcodeDetector({ formats: detectorFormats });
+        // Na Safari BarcodeDetector może istnieć, ale nie wspierać EAN/UPC – sprawdź dostępne formaty
+        const available = (typeof window.BarcodeDetector.getSupportedFormats === 'function')
+          ? await window.BarcodeDetector.getSupportedFormats()
+          : supportedFormats;
+        const desired = supportedFormats.filter(f => (available || []).includes(f));
+        if (desired.length > 0) {
+          nativeDetector = new window.BarcodeDetector({ formats: desired });
+        } else {
+          // brak wsparcia dla EAN/UPC – wymuś fallback ZXing
+          nativeDetector = null;
+        }
       } catch (_) {
         nativeDetector = null;
       }
@@ -346,24 +313,16 @@
               }
             }
           }
-        }
-      } catch (_) {}
-      finally { isDecoding = false; }
-    };
-    // Szybka pętla skanowania: natywny co 250ms, ZXing w trybie ciągłym (stabilne na iOS)
-    if (nativeDetector) {
-      doScanOnce();
-      scanIntervalId = window.setInterval(doScanOnce, 250);
-    } else if (zxingReader) {
-      try {
-        zxingReader.decodeFromVideoElementContinuously(videoElement, (result, err) => {
+        } else if (zxingReader) {
+          const result = await zxingReader.decodeOnceFromVideoElement(videoElement).catch(() => null);
           if (result && result.text) {
+            // ZXing zwykle zwraca pojedynczy wynik; sprawdź, czy jest w pobliżu ramki (z marginesem)
             const pts = result.resultPoints || result.points || [];
             const target = getTargetRect();
             const padded = inflateRect(target, 20);
             let accept = true;
             if (pts.length) {
-              const avg = pts.reduce((acc, p) => ({ x: acc.x + (p.x || p.getX?.() || 0), y: acc.y + (p.y || p.getY?.() || 0) }), { x: 0, y: 0 });
+              const avg = pts.reduce((a, p) => ({ x: a.x + (p.x || p.getX?.() || 0), y: a.y + (p.y || p.getY?.() || 0) }), { x: 0, y: 0 });
               avg.x /= pts.length; avg.y /= pts.length;
               accept = avg.x >= padded.x && avg.x <= padded.x + padded.width && avg.y >= padded.y && avg.y <= padded.y + padded.height;
             }
@@ -372,9 +331,21 @@
               onDetected(result.text, fmt);
             }
           }
-          // ignoruj NotFoundException itp. – tryb ciągły sam ponawia
-        });
+        }
       } catch (_) {}
+      finally { isDecoding = false; }
+    };
+    // Szybka pętla skanowania: natywny co 250ms, ZXing w pętli z oddechem klatki
+    if (nativeDetector) {
+      doScanOnce();
+      scanIntervalId = window.setInterval(doScanOnce, 250);
+    } else if (zxingReader) {
+      const zxingLoop = async () => {
+        if (!mediaStream || !zxingReader) return;
+        await doScanOnce();
+        if (mediaStream && zxingReader) requestAnimationFrame(zxingLoop);
+      };
+      requestAnimationFrame(zxingLoop);
     }
   }
 
@@ -493,14 +464,16 @@
         const { db } = await import('./firebase-init.js');
         const { doc, setDoc, getDoc, onSnapshot, deleteDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
         // dokument o ID = userId, żeby nadpisywać i mieć 1 aktywne żądanie na użytkownika
-        await setDoc(doc(db, 'requests', userId), {
-          userId,
-          ean: lastResult,
-          requestedAt: serverTimestamp(),
-          status: 'pending',
-          // TTL: klient ustawia czas wygaśnięcia (np. 30 min) – skonfiguruj TTL w Firestore na polu expiresAt
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000)
-        });
+        await retryAsync(async () => {
+          await setDoc(doc(db, 'requests', userId), {
+            userId,
+            ean: lastResult,
+            requestedAt: serverTimestamp(),
+            status: 'pending',
+            // TTL: klient ustawia czas wygaśnięcia (np. 30 min) – skonfiguruj TTL w Firestore na polu expiresAt
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+          });
+        }, { retries: 4, baseDelayMs: 400, maxDelayMs: 5000 });
         hint.classList.add('hint-success');
         hint.textContent = 'Zeskanowano kod pomyślnie • Zapytanie o cenę wysłane';
 
@@ -510,16 +483,16 @@
         modalText.textContent = 'Oczekiwanie na odpowiedź serwera…';
         if (modalSpinner) modalSpinner.style.display = '';
 
-        // timeout 15s
+        // timeout 30s (słabe łącza GSM)
         let resolved = false;
         let gotResult = false;
         const timeoutId = setTimeout(() => {
           if (resolved) return;
           resolved = true;
-          modalText.textContent = 'Przekroczono czas oczekiwania. Spróbuj ponownie.';
+          modalText.textContent = 'Przekroczono czas oczekiwania (30 s). Upewnij się, że serwer ma Internet i spróbuj ponownie.';
           modalActions.classList.remove('hidden');
           if (modalSpinner) modalSpinner.style.display = 'none';
-        }, 15000);
+        }, 30000);
 
         // nasłuchuj odpowiedzi serwera
         const unsub = onSnapshot(doc(db, 'requests', userId), (snap) => {
@@ -538,7 +511,10 @@
             modalActions.classList.remove('hidden');
             if (modalSpinner) modalSpinner.style.display = 'none';
           }
-        }, () => {});
+        }, (err) => {
+          // przy błędzie nasłuchu nie blokuj całego procesu – pokaż info i pozwól ponowić
+          console.warn('Błąd nasłuchu odpowiedzi:', err);
+        });
 
         modalOk.onclick = async () => {
           try { unsub(); } catch(_) {}
@@ -561,7 +537,7 @@
       } catch (err) {
         console.error(err);
         hint.classList.add('hint-warning');
-        hint.textContent = 'Błąd wysyłania zapytania o cenę';
+        hint.textContent = 'Błąd wysyłania zapytania o cenę (sprawdź Internet)';
       }
     });
   }
@@ -607,6 +583,22 @@
       // Zaktualizuj stan przycisku według bieżącego kodu
       const has = Boolean(lastResult);
       if (priceBtn) priceBtn.disabled = !has || !isFirestoreOk;
+    }
+  }
+
+  // Prosty helper retry z backoffem (dla niestabilnych łącz GSM)
+  async function retryAsync(fn, { retries = 3, baseDelayMs = 300, maxDelayMs = 4000 } = {}) {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await fn();
+      } catch (e) {
+        attempt++;
+        if (attempt > retries) throw e;
+        const jitter = 1 + Math.random() * 0.3;
+        const delay = Math.min(maxDelayMs, Math.round(baseDelayMs * Math.pow(2, attempt - 1) * jitter));
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
   }
 
